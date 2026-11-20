@@ -1,3 +1,4 @@
+using LEGOModelImporter;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -15,6 +16,9 @@ namespace Unity.LEGO.Behaviours.Actions
 
         List<LEGOBehaviour> m_Behaviours = new List<LEGOBehaviour>();
 
+        HashSet<Brick> m_ExplodingBricks = new HashSet<Brick>();
+        Bounds m_ExplodingBounds;
+
         protected override void Reset()
         {
             base.Reset();
@@ -28,8 +32,21 @@ namespace Unity.LEGO.Behaviours.Actions
 
             if (IsPlacedOnBrick())
             {
-                // Find all LEGOBehaviours in scope.
-                foreach (var brick in m_ScopedBricks)
+                // Movement actions move the whole ModelGroup, but connected-brick scope
+                // can miss bricks in that group. Explode the same set that moves.
+                m_ExplodingBricks = new HashSet<Brick>(m_ScopedBricks);
+                if (m_Scope == Scope.ConnectedBricks)
+                {
+                    var group = m_Brick.GetComponentInParent<ModelGroup>();
+                    if (group)
+                    {
+                        m_ExplodingBricks.UnionWith(group.GetComponentsInChildren<Brick>(true));
+                    }
+                }
+                m_ExplodingBounds = GetScopedBounds(m_ExplodingBricks, out _, out _);
+
+                // Find all LEGOBehaviours in the exploding set.
+                foreach (var brick in m_ExplodingBricks)
                 {
                     m_Behaviours.AddRange(brick.GetComponentsInChildren<LEGOBehaviour>());
                 }
@@ -43,7 +60,7 @@ namespace Unity.LEGO.Behaviours.Actions
                 if (!m_Detonated)
                 {
                     // Remove all game objects with LEGOBehaviourCollider components.
-                    foreach (var brick in m_ScopedBricks)
+                    foreach (var brick in m_ExplodingBricks)
                     {
                         foreach (var behaviourCollider in brick.GetComponentsInChildren<LEGOBehaviourCollider>())
                         {
@@ -60,7 +77,7 @@ namespace Unity.LEGO.Behaviours.Actions
                     var lift = m_Power * 0.25f;
 
                     // Send all bricks in scope flying.
-                    foreach (var brick in m_ScopedBricks)
+                    foreach (var brick in m_ExplodingBricks)
                     {
                         brick.DisconnectAll();
 
@@ -69,7 +86,7 @@ namespace Unity.LEGO.Behaviours.Actions
                         {
                             rigidBody = brick.gameObject.AddComponent<Rigidbody>();
                         }
-                        rigidBody.AddExplosionForce(m_Power, transform.position + transform.TransformVector(m_BrickPivotOffset), m_ScopedBounds.extents.magnitude, lift, ForceMode.VelocityChange);
+                        rigidBody.AddExplosionForce(m_Power, transform.position + transform.TransformVector(m_BrickPivotOffset), m_ExplodingBounds.extents.magnitude, lift, ForceMode.VelocityChange);
 
                         if (m_RemoveBricks)
                         {
